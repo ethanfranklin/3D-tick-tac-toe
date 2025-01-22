@@ -225,7 +225,7 @@ export default function Home() {
           <div>
             <h3 className="font-bold text-gray-800 dark:text-white mb-2">Strategy Tips</h3>
             <ul className="list-disc pl-5 space-y-2">
-              <li>Watch for winning opportunities in all three dimensions</li>
+              <li>Watch for the best winning opportunities in all three dimensions</li>
               <li>The center cell of the middle layer is powerful as it's part of many possible winning lines</li>
               <li>Don't forget about diagonal wins that cross through different layers</li>
               <li>Block your opponent's potential winning moves, especially in 3D diagonals which can be harder to spot</li>
