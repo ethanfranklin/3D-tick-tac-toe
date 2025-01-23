@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Home() {
   // Initialize a 3x3x3 cube (27 spaces) as null
@@ -9,6 +9,9 @@ export default function Home() {
   const [playerX, setPlayerX] = useState('');
   const [playerO, setPlayerO] = useState('');
   const [gameStarted, setGameStarted] = useState(false);
+  const [isComputerGame, setIsComputerGame] = useState(false);
+  const [difficulty, setDifficulty] = useState('medium'); // 'easy', 'medium', 'hard'
+  const [showOrientationWarning, setShowOrientationWarning] = useState(false);
 
   const calculateWinner = (cube) => {
     // All possible winning lines in 3D
@@ -54,8 +57,121 @@ export default function Home() {
     return cube.every(square => square) ? 'Draw' : null;
   };
 
+  // Function to get all empty positions
+  const getEmptyPositions = (currentCube) => {
+    return currentCube.reduce((acc, cell, index) => {
+      if (!cell) acc.push(index);
+      return acc;
+    }, []);
+  };
+
+  // Function to check if a move would result in a win
+  const wouldWin = (currentCube, position, player) => {
+    const tempCube = [...currentCube];
+    tempCube[position] = player;
+    return calculateWinner(tempCube) === player;
+  };
+
+  // Function to find winning move
+  const findWinningMove = (currentCube, player) => {
+    const emptyPositions = getEmptyPositions(currentCube);
+    return emptyPositions.find(pos => wouldWin(currentCube, pos, player));
+  };
+
+  // Function to evaluate board state for minimax
+  const evaluateBoard = (currentCube) => {
+    const winner = calculateWinner(currentCube);
+    if (winner === 'O') return 10;
+    if (winner === 'X') return -10;
+    return 0;
+  };
+
+  // Minimax algorithm for hard difficulty
+  const minimax = (currentCube, depth, isMaximizing) => {
+    const winner = calculateWinner(currentCube);
+    if (winner) return evaluateBoard(currentCube);
+    if (depth === 0) return 0;
+
+    const emptyPositions = getEmptyPositions(currentCube);
+    if (emptyPositions.length === 0) return 0;
+
+    if (isMaximizing) {
+      let bestScore = -Infinity;
+      for (const pos of emptyPositions) {
+        currentCube[pos] = 'O';
+        const score = minimax(currentCube, depth - 1, false);
+        currentCube[pos] = null;
+        bestScore = Math.max(score, bestScore);
+      }
+      return bestScore;
+    } else {
+      let bestScore = Infinity;
+      for (const pos of emptyPositions) {
+        currentCube[pos] = 'X';
+        const score = minimax(currentCube, depth - 1, true);
+        currentCube[pos] = null;
+        bestScore = Math.min(score, bestScore);
+      }
+      return bestScore;
+    }
+  };
+
+  // Computer move function
+  const makeComputerMove = () => {
+    const currentCube = [...cube];
+    let movePosition;
+
+    // Check difficulty level
+    if (difficulty === 'easy') {
+      // Random move
+      const emptyPositions = getEmptyPositions(currentCube);
+      movePosition = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+    } else if (difficulty === 'medium') {
+      // Try to win first, then block opponent, then random
+      movePosition = findWinningMove(currentCube, 'O');
+      if (!movePosition) {
+        movePosition = findWinningMove(currentCube, 'X');
+      }
+      if (!movePosition) {
+        const emptyPositions = getEmptyPositions(currentCube);
+        movePosition = emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
+      }
+    } else {
+      // Hard - Use minimax with limited depth
+      const emptyPositions = getEmptyPositions(currentCube);
+      let bestScore = -Infinity;
+      movePosition = emptyPositions[0];
+
+      for (const pos of emptyPositions) {
+        currentCube[pos] = 'O';
+        const score = minimax(currentCube, 3, false); // Depth limited to 3 for performance
+        currentCube[pos] = null;
+        if (score > bestScore) {
+          bestScore = score;
+          movePosition = pos;
+        }
+      }
+    }
+
+    // Make the move
+    const nextCube = cube.slice();
+    nextCube[movePosition] = 'O';
+    setCube(nextCube);
+    setXIsNext(true);
+  };
+
+  // Effect for computer's turn
+  useEffect(() => {
+    if (gameStarted && isComputerGame && !xIsNext && !calculateWinner(cube)) {
+      const timer = setTimeout(() => {
+        makeComputerMove();
+      }, 500); // Add a small delay for better UX
+      return () => clearTimeout(timer);
+    }
+  }, [xIsNext, gameStarted, cube]);
+
   const handleClick = (i) => {
-    if (!gameStarted || cube[i] || calculateWinner(cube)) return;
+    if (!gameStarted || cube[i] || calculateWinner(cube) || (!xIsNext && isComputerGame)) return;
 
     const nextCube = cube.slice();
     nextCube[i] = xIsNext ? 'X' : 'O';
@@ -69,12 +185,16 @@ export default function Home() {
     setGameStarted(false);
     setPlayerX('');
     setPlayerO('');
+    setIsComputerGame(false);
   };
 
   const startGame = (e) => {
     e.preventDefault();
-    if (playerX.trim() && playerO.trim()) {
+    if (playerX.trim() && (isComputerGame || playerO.trim())) {
       setGameStarted(true);
+      if (isComputerGame) {
+        setPlayerO('Computer');
+      }
     }
   };
 
@@ -106,8 +226,57 @@ export default function Home() {
     </div>
   );
 
+  // Add orientation check effect
+  useEffect(() => {
+    const checkOrientation = () => {
+      if (typeof window !== 'undefined') {
+        const isMobile = window.innerWidth <= 768;
+        const isPortrait = window.innerHeight > window.innerWidth;
+        setShowOrientationWarning(isMobile && isPortrait);
+      }
+    };
+
+    // Check initially
+    checkOrientation();
+
+    // Add event listener for orientation/resize changes
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 py-16">
+      {/* Orientation Warning Modal */}
+      {showOrientationWarning && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm mx-auto shadow-xl">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-yellow-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                Rotate Your Device
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300">
+                This game works best in landscape mode. Please rotate your device for the best experience.
+              </p>
+              <button
+                onClick={() => setShowOrientationWarning(false)}
+                className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col items-center max-w-4xl w-full px-4">
         <h1 className="text-4xl font-bold mb-8 text-gray-800 dark:text-white">3D Tic Tac Toe</h1>
 
@@ -129,21 +298,57 @@ export default function Home() {
                   required
                 />
               </div>
-              <div>
-                <label htmlFor="playerO" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Player O Name
-                </label>
+
+              <div className="flex items-center space-x-2 py-2">
                 <input
-                  type="text"
-                  id="playerO"
-                  value={playerO}
-                  onChange={(e) => setPlayerO(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
-                    focus:outline-none focus:ring-2 focus:ring-indigo-500 
-                    bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  required
+                  type="checkbox"
+                  id="computerGame"
+                  checked={isComputerGame}
+                  onChange={(e) => setIsComputerGame(e.target.checked)}
+                  className="rounded text-indigo-600 focus:ring-indigo-500"
                 />
+                <label htmlFor="computerGame" className="text-sm text-gray-700 dark:text-gray-300">
+                  Play against computer
+                </label>
               </div>
+
+              {isComputerGame && (
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Difficulty
+                  </label>
+                  <select
+                    value={difficulty}
+                    onChange={(e) => setDifficulty(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500 
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </select>
+                </div>
+              )}
+
+              {!isComputerGame && (
+                <div>
+                  <label htmlFor="playerO" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Player O Name
+                  </label>
+                  <input
+                    type="text"
+                    id="playerO"
+                    value={playerO}
+                    onChange={(e) => setPlayerO(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md 
+                      focus:outline-none focus:ring-2 focus:ring-indigo-500 
+                      bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    required
+                  />
+                </div>
+              )}
+
               <button
                 type="submit"
                 className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md 
